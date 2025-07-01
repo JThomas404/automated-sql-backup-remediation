@@ -265,7 +265,7 @@ The SQL Agent job logs revealed the core issue:
 
 - The backup job failed entirely because it attempted to process an offline database (`MP_LIVE`), which halted execution of all subsequent steps—including cleanup.
 
-![man-job-fail-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/man-job-fail-1.png)
+![man-job-fail.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/man-job-fail-1.png)
 ![log-file-path.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/log-file-path.png)
 ![log-txt-ouput.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/log-txt-ouput.png)
 
