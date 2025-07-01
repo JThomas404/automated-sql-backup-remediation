@@ -30,8 +30,6 @@ This project documents a high-impact incident I resolved as a Cloud Engineer at 
 
 Through a structured and step-by-step approach, I diagnosed the root causes, retained backups and an offline database, and implemented automated cleanup scripts, SQL configuration fixes, and long-term monitoring controls. This resolved the issue and prevented future backup failures. The project showcases technical troubleshooting, database administration, scripting, and preventative system design.
 
-![disk-alert.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/disk-alert.png)
-
 ## Summary at a Glance
 
 > Resolved SQL Server backup failure by automating disk cleanups, isolating maintenance job faults, and implementing long-term monitoring to prevent recurrence. Issue was identified in production and mitigated within 2 working days, with full backup functionality restored within 24 hours and post-monitoring conducted over 3 additional days.
