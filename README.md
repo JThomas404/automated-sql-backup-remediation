@@ -5,6 +5,7 @@
 - [Overview](#overview)
 - [Summary at a Glance](#summary-at-a-glance)
 - [Tools and Technologies Used](#tools-and-technologies-used)
+- [Project Context](#project-context)
 - [Project Structure](#project-structure)
 - [Incident Trigger](#incident-trigger)
 - [Investigation and Remediation Steps](#investigation-and-remediation-steps)
@@ -32,7 +33,7 @@ Through a structured and step-by-step approach, I diagnosed the root causes, ret
 
 ## Summary at a Glance
 
-> Resolved SQL Server backup failure by automating disk cleanups, isolating maintenance job faults, and implementing long-term monitoring to prevent recurrence. Issue was identified in production and mitigated within 2 working days, with full backup functionality restored within 24 hours and post-monitoring conducted over 3 additional days.
+> Resolved SQL Server backup failure by automating disk cleanups, isolating maintenance job faults, and implementing long-term monitoring to prevent recurrence. The issue was identified in a production environment and fully mitigated within two working days. Full backup functionality was restored within 24 hours, followed by three days of post-resolution monitoring.
 
 ---
 
@@ -47,6 +48,12 @@ Through a structured and step-by-step approach, I diagnosed the root causes, ret
 | TreeSize Free          | Used to visualise and analyse disk space usage             | [Link](https://www.jam-software.com/treesize_free)                                  |
 | WinDirStat             | Disk usage statistics and cleanup planning                 | [Link](https://sourceforge.net/projects/windirstat/)                                |
 | Everything Search Tool | Assisted in locating large files across drives quickly     | [Link](https://www.voidtools.com/downloads/)                                        |
+
+---
+
+## Project Context
+
+This issue occurred in a live production environment where consistent backups were critical. I was directly responsible for responding to infrastructure alerts and worked independently to investigate and implement the full solution. Time sensitivity was crucial due to the risk of backup failures and potential data loss.
 
 ---
 
@@ -66,177 +73,184 @@ automated-sql-backup-remediation/
     └── sql-recent-backups-location.sql
 ```
 
+---
+
 ## Incident Trigger
 
-- The RMM platform triggered an alert for low disk space on the SQL Server `HCE-SQL01`.
-- Specifically, the **D: drive** (dedicated to SQL Data and backups) had only **12.88 GB free** of 750 GB.
+An urgent alert was triggered by the N-Central RMM tool for critically low disk space on the production SQL Server `HCE-SQL01`. Specifically, the D: drive—designated for SQL data and backups—had dropped to only **12.88 GB free** out of 750 GB total capacity.
 
 ![disk-alert.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/disk-alert.png)
+
+---
 
 ## Investigation and Remediation Steps
 
 ### 1. Initial Space Recovery
 
-To begin immediate recovery:
+To stabilise the system and begin freeing space:
 
-- Logged into `HCE-SQL01`.
-- Ran built-in Windows Disk Cleanup.
-- Cleared user temp files using the command:
+- Logged into `HCE-SQL01` and executed Disk Cleanup.
+- Deleted temp files using a CLI batch command:
 
-```cmd
-del /q /f /s %temp%\*
-```
+  ```cmd
+  del /q /f /s %temp%\*
+  ```
 
 ![del-temp-files.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/del-temp-files.png)
 
+---
+
 ### 2. Storage Analysis
 
-To analyse storage usage:
+To diagnose the space usage breakdown:
 
-- Installed **WinDirStat** to visualise file distribution.
-- Generated a **TreeSize** report for detailed usage insights.
-- Identified large `.bak` SQL backup files as the primary source of drive saturation.
+- Installed **WinDirStat** and **TreeSize** for comprehensive drive analysis.
+- Identified `.bak` SQL backups as the main contributor to saturation.
 
 ![treesize-rpt-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/treesize-rpt-1.png)
 ![treesize-rpt-2.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/treesize-rpt-2.png)
 ![treesize-rpt-3.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/treesize-rpt-3.png)
 
+---
+
 ### 3. SQL Server Maintenance Plan Review
 
-Upon reviewing the SQL Server Maintenance Plan:
-
-- Confirmed that a cleanup task existed to delete backups older than 14 days.
+- Verified that a backup cleanup task existed but was not executing.
+- Job history revealed consistent failures related to disk space exhaustion.
 
 ![sql-maintenance-plan-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-maintenance-plan-1.png)
 ![sql-maintenance-plan-2.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-maintenance-plan-2.png)
-
-- However, this step was not executing properly due to low disk space.
-- The cleanup failed, and the backup job continued, leading to backup file accumulation.
-
 ![job-history.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/job-history.png)
+
+---
 
 ### 4. Manual Backup Management
 
-To restore available space:
-
-- Compressed older backups.
+- Compressed old `.bak` files to reclaim disk space.
 
 ![compressed-baks.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/compressed-baks.png)
 
-- Manually moved them to other drives with available space.
+- Migrated files to alternate drives with sufficient storage.
 
 ![mv-baks-e-drive.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/mv-baks-e-drive.png)
 ![mv-baks-f-drive.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/mv-baks-f-drive.png)
 
-- Verified file integrity after transfer.
+---
 
 ### 5. Additional Drive Cleanup
 
-To remove residual clutter and stale data:
+- Executed PowerShell scripts to remove temp data and recycle bin contents across user profiles.
 
-- Executed PowerShell scripts to clean each user profile’s temp folder.
-- Emptied each user’s Recycle Bin.
+```powershell
+Get-ChildItem -Path "C:\Users" -Directory | ForEach-Object {
+    $tempPath = Join-Path $_.FullName "AppData\Local\Temp"
+    if (Test-Path $tempPath) {
+        Remove-Item "$tempPath\*" -Force -Recurse -ErrorAction SilentlyContinue
+    }
+}
+```
 
-> All the PowerShell scripts can be located in the `pwsh-scripts` directory.
+```powershell
+$users = Get-ChildItem -Path "C:\Users" -Directory |
+         Where-Object { $_.Name -notin @("Default", "Public") }
+foreach ($user in $users) {
+    $userSID = (Get-Acl $user.FullName).Owner
+    $userBin = "C:\$Recycle.Bin\$userSID"
+    if (Test-Path $userBin) {
+        Remove-Item "$userBin\*" -Force -Recurse -ErrorAction SilentlyContinue
+    }
+}
+```
+
+> The cleanup scripts are stored in the `pwsh-scripts/` directory.
+
+---
 
 ### 6. SQL Space and Backup Analysis
 
-To verify backup size and drive requirements:
-
-- Used SQL queries to assess:
-
-  - Space needed per database
-  - Backup sizes
-  - Destination paths
-  - Compared with drive free space using `xp_fixeddrives`
+- Used SQL queries to calculate estimated DB sizes, recent backup logs, and drive capacity using `xp_fixeddrives`.
 
 ![sql-query-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-1.png)
 ![sql-query-2.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-2.png)
 ![sql-query-3.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-3.png)
 ![sql-query-4.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-4.png)
 
-> All the SQL queries can be located in the `sql-scripts` directory.
+---
 
 ## Failure Root Cause Identification
 
-After redirecting SQL Agent job logs to a local `.txt` file, the root cause was confirmed:
+The SQL Agent job logs revealed the core issue:
 
-- The job failed because it attempted to back up a database (`MP_LIVE`) that was **offline**.
+- The backup job failed entirely because it attempted to process an offline database (`MP_LIVE`), which halted execution of all subsequent steps—including cleanup.
 
 ![man-job-fail-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/man-job-fail-1.png)
 ![log-file-path.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/log-file-path.png)
 ![log-txt-ouput.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/log-txt-ouput.png)
 
-> Error: "Database 'MP_LIVE' cannot be opened because it is offline. BACKUP DATABASE is terminating abnormally."
+---
 
 ## Permanent Fixes and Testing
 
-- Updated the SQL Maintenance Plan to **ignore offline databases**.
+- Modified the SQL Maintenance Plan to exclude offline databases during the backup cycle.
 
 ![updated-plan-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/updated-plan-1.png)
 ![updated-plan-2.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/updated-plan-2.png)
 
-- Manually reran the job, which completed successfully.
+- Retested the job to verify that it completed without errors.
 
 ![man-job-success.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/man-job-success.png)
 
-- Removed the temporary job log file.
-- Archived compressed backups to `D:\Compressed Older Backups`.
-
-The ticket resolved and the alert unflagged.
+- Removed temporary logs and archived older backups in a designated `Compressed Older Backups` folder.
 
 ![disk-alert-resolved.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/disk-alert-resolved.png)
-
-The disk space was now showing a healthy amount of free disk space — from **12.88 GB** to **129 GB** free on SQL Data Drive (D:).
-
 ![cleared-disk-space.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/cleared-disk-space.png)
+
+---
 
 ## Root Cause Summary
 
-The most critical issue was the Maintenance Plan’s lack of logic to skip offline databases and its sequential dependency on cleanup. When the cleanup task failed due to low disk space, backups continued without deleting older files. Then, when encountering an offline database (`MP_LIVE`), the entire backup job failed, compounding the storage problem.
+The primary failure stemmed from a maintenance plan attempting to back up an offline database. This caused the entire job to abort before reaching the cleanup stage. As a result, backup files accumulated over time, exhausting available disk space and compounding system instability.
+
+---
 
 ## Preventative Measures
 
-- Verified that the backup jobs executed successfully over several days.
-- Enabled alerting for:
+- Configured SQL Agent jobs to skip inaccessible databases.
+- Set automated alerts for:
 
-  - Failed SQL Agent jobs
-  - Low disk space thresholds:
+  - Low disk thresholds:
 
-    - D: Drive — 35.5 GB
-    - E: Drive — 12.5 GB
+    - D: Drive = 35.5 GB
+    - E: Drive = 12.5 GB
 
-- Reconfigured the Maintenance Plan to skip offline databases automatically.
+  - Any future SQL Agent failures.
+
+- Validated backups daily for one week post-resolution.
+
+---
 
 ## Skills Showcased
 
-**Impact Metrics**:
+- **SQL Server Administration** – Maintenance plans, backup management, and failure isolation.
+- **PowerShell Automation** – System-level scripts to perform consistent, user-wide cleanup.
+- **Root Cause Analysis** – Correlating job logs, file growth, and service behaviour.
+- **Monitoring & Observability** – Leveraging RMM alerts and log files for early detection.
+- **Incident Response** – Restored stability within a critical 48-hour SLA.
+- **Documentation** – Reproducible report reflecting real-world cloud engineering responsibility.
 
-- Recovered disk space: from **12.88 GB** to **129 GB** free on SQL Data Drive (D:)
-- Time to resolution: **2 working days**, plus **3 days** post-resolution monitoring
-- Backup restoration: **fully operational within 24 hours**
-
-**Key Skills**:
-
-- **Database Management** – Administered SQL Server maintenance plans and backup scheduling
-- **Troubleshooting** – Used logs and scripts to isolate complex SQL Server issues
-- **Root Cause Diagnostics** – Applied investigative methods to trace cascading failures
-- **PowerShell Automation** – Developed custom scripts for system-wide cleanup
-- **Monitoring and Alerting** – Integrated SQL alerts with RMM thresholds
-- **Capacity Planning** – Interpreted file system and database usage with TreeSize and SQL
-- **Documentation** – Presented a detailed, reproducible incident report
-- **Preventative Design** – Hardened backup systems to avoid repeat failures
+---
 
 ## Lessons Learned
 
-- Disk space constraints can silently disable critical tasks (e.g. cleanup routines), leading to compounding failures.
-- Backup routines must account for offline or transitioning databases.
-- Observability (logging, alerting) is vital for diagnosing backup job failures.
-- Manual cleanups are not sustainable—automation must be part of long-term recovery.
-- Working under production risk requires caution and planning. Rather than deleting old backups, I opted to compress and safely relocate them, test restoration manually, and gradually restore order.
+- Job chains must account for partial failures. An offline database should not break the entire backup pipeline.
+- Cleanup tasks should be fail-safe and decoupled from backup completion status.
+- Compression and relocation are safer alternatives to deletion under pressure.
+- Visibility into log output is essential during postmortems and troubleshooting.
+
+---
 
 ## Conclusion
 
-This project demonstrates my ability to analyse, remediate, and future-proof production SQL Server environments using a blend of scripting, root cause analysis, and preventative configuration. The structured response ensured minimal downtime and restored reliable backup operations without data loss.
+This project reflects my ability to respond decisively under production pressure, solve complex infrastructure issues independently, and implement long-term fixes through automation and preventative design. It highlights the mindset and execution expected of a Cloud Engineer responsible for production reliability and business continuity.
 
 ---
