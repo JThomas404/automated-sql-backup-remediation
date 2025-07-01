@@ -92,9 +92,9 @@ To stabilise the system and begin freeing space:
 - Logged into `HCE-SQL01` and executed Disk Cleanup.
 - Deleted temp files using a CLI batch command:
 
-  ```cmd
-  del /q /f /s %temp%\*
-  ```
+```cmd
+del /q /f /s %temp%\*
+```
 
 ![del-temp-files.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/del-temp-files.png)
 
@@ -168,12 +168,94 @@ foreach ($user in $users) {
 
 ### 6. SQL Space and Backup Analysis
 
-- Used SQL queries to calculate estimated DB sizes, recent backup logs, and drive capacity using `xp_fixeddrives`.
+To accurately assess storage needs and validate backup behaviours, I executed a sequence of SQL diagnostic queries that provided key insights into database sizes, recent backup history, backup destinations, and available drive capacity.
+
+**a. Estimating Current Database Sizes**
+
+The query below aggregates size data across all online databases, showing both megabytes and gigabytes. This helped assess how much space each database consumes and plan capacity accordingly.
+
+```sql
+SELECT
+    d.name AS DatabaseName,
+    CONVERT(DECIMAL(10,2), SUM(mf.size) * 8 / 1024) AS EstimatedSizeMB,
+    CONVERT(DECIMAL(10,2), SUM(mf.size) * 8 / 1024 / 1024) AS EstimatedSizeGB
+FROM
+    sys.master_files mf
+JOIN
+    sys.databases d ON d.database_id = mf.database_id
+WHERE
+    d.state = 0  -- Online databases
+GROUP BY
+    d.name
+ORDER BY
+    EstimatedSizeGB DESC;
+```
 
 ![sql-query-1.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-1.png)
+
+---
+
+**b. Verifying the Last Full Backups and Sizes**
+
+This query provided a quick overview of the last completed full backups, along with the size and compressed size for each database. It confirmed that backup operations had been occurring, albeit inconsistently due to job failures.
+
+```sql
+SELECT
+    database_name,
+    MAX(backup_finish_date) AS last_backup,
+    MAX(backup_size / 1024 / 1024) AS size_MB,
+    MAX(compressed_backup_size / 1024 / 1024) AS compressed_size_MB
+FROM msdb.dbo.backupset
+WHERE type = 'D' -- Full backups
+GROUP BY database_name
+ORDER BY compressed_size_MB DESC;
+```
+
 ![sql-query-2.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-2.png)
+
+---
+
+**c. Mapping Backup Destinations by Drive**
+
+To ensure backups were being written to the correct drives and not inadvertently consuming C:\ or system partitions, I queried the physical device paths of recent full backups across the last 7 days. This also revealed if multiple drives were being used inappropriately.
+
+```sql
+SELECT
+    bs.database_name,
+    bs.backup_start_date,
+    bs.backup_finish_date,
+    bs.backup_size / 1024 / 1024 AS backup_size_mb,
+    bmf.physical_device_name,
+    LEFT(bmf.physical_device_name, 1) AS drive_letter
+FROM msdb.dbo.backupset bs
+JOIN msdb.dbo.backupmediafamily bmf ON bs.media_set_id = bmf.media_set_id
+WHERE bs.backup_start_date >= DATEADD(DAY, -7, GETDATE()) -- last 7 days
+  AND bs.type = 'D'  -- Full database backup
+ORDER BY bs.backup_start_date DESC;
+```
+
 ![sql-query-3.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-3.png)
+
+---
+
+**d. Measuring Free Space on Drives**
+
+Lastly, I executed the undocumented but reliable `xp_fixeddrives` stored procedure to display real-time free space (in MB) for all available drives. This allowed me to align estimated backup sizes with available capacity.
+
+```sql
+EXEC xp_fixeddrives;
+
+-- Optional: Estimate total required space for upcoming backup
+-- Example:
+-- Drive D: needs 34,200 MB
+-- Drive E: needs 12,000 MB
+```
+
 ![sql-query-4.png](https://github.com/JThomas404/automated-sql-backup-remediation/raw/main/images/sql-query-4.png)
+
+---
+
+> All SQL diagnostic scripts are available in the `sql-scripts/` directory.
 
 ---
 
