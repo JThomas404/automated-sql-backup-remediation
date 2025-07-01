@@ -240,3 +240,5 @@ The most critical issue was the Maintenance Plan’s lack of logic to skip offli
 ## Conclusion
 
 This project demonstrates my ability to analyse, remediate, and future-proof production SQL Server environments using a blend of scripting, root cause analysis, and preventative configuration. The structured response ensured minimal downtime and restored reliable backup operations without data loss.
+
+---
